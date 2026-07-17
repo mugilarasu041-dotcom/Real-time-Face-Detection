@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Pose Matcher - Real-time Expression Detection</title>
+    
+    <!-- MediaPipe Face Mesh -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .video-section {
+            position: relative;
+            background: #1a1a2e;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+        }
+
+        #input_video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+
+        #output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+
+        .detection-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ff88;
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            z-index: 10;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #00ff88;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .image-box {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .image-box:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .image-content {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .image-content img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 0.3s ease;
+        }
+
+        .image-content img.loading {
+            opacity: 0;
+        }
+
+        .placeholder-text {
+            position: absolute;
+            color: #999;
+            font-size: 1rem;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .expression-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+
+        .controls {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px;
+            border-left: 4px solid #c33;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+
+        .stat-item {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .stat-value {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎭 AI Pose Matcher</h1>
+            <p>Real-time facial expression detection with dynamic image matching</p>
+        </header>
+
+        <div class="error-message" id="error-message">
+            <strong>Camera Access Error:</strong> <span id="error-text"></span>
+        </div>
+
+        <div class="main-content">
+            <div class="video-section">
+                <div class="video-container">
+                    <video id="input_video" playsinline></video>
+                    <canvas id="output_canvas"></canvas>
+                    <div class="detection-overlay">
+                        <span class="status-indicator" id="status-dot"></span>
+                        <span id="detection-status">Initializing...</span>
+                        <div class="stats">
+                            <div class="stat-item">
+                                <div class="stat-value" id="expression-value">-</div>
+                                <div>Expression</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="confidence-value">-</div>
+                                <div>Confidence</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-panel">
+                <div class="image-box">
+                    <div class="image-header">
+                         Matched Image
+                    </div>
+                    <div class="image-content" id="image-container">
+                        <div class="placeholder-text">
+                            <div class="loading-spinner"></div>
+                            <p>Waiting for camera...</p>
+                        </div>
+                    </div>
+                    <div class="expression-label" id="expression-label">No detection</div>
+                </div>
+
+                <div class="controls">
+                    <button class="btn" id="start-btn" onclick="toggleCamera()">
+                        Start Camera
+                    </button>
+                    <p style="margin-top: 15px; font-size: 0.9rem; color: #666;">
+                        Try: Smile 😊, Open mouth 😮, Close eyes 😴, or Neutral 😐
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Built with MediaPipe Face Mesh • Runs entirely in your browser</p>
+    </footer>
+
+    <script>
+        // Configuration
+        const CONFIG = {
+            minConfidence: 0.5,
+            updateInterval: 300, // ms between image updates
+            smoothingFactor: 0.3 // for expression smoothing
+        };
+
+        // Image mapping based on detected expressions
+        const EXPRESSION_IMAGES = {
+            smile: [
+                'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&h=400&fit=crop'
+            ],
+            surprised: [
+                'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=600&h=400&fit=crop'
+            ],
+            neutral: [
+                'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=600&h=400&fit=crop'
+            ],
+            eyes_closed: [
+                'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600&h=400&fit=crop'
+            ],
+            mouth_open: [
+                'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1504257432389-52343af06ae3?w=600&h=400&fit=crop',
+                'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=600&h=400&fit=crop'
+            ]
+        };
+
+        // State management
+        let cameraActive = false;
+        let faceMesh = null;
+        let currentExpression = 'neutral';
+        let lastImageUpdate = 0;
+        let expressionHistory = [];
+        let videoElement = null;
+        let canvasElement = null;
+        let canvasCtx = null;
+
+        // Initialize MediaPipe Face Mesh
+        function initFaceMesh() {
+            faceMesh = new FaceMesh({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                }
+            });
+
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults(onResults);
+        }
+
+        // Process detection results
+        function onResults(results) {
+            // Clear canvas
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            // Draw video frame
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Analyze expression
+                const expression = analyzeExpression(landmarks);
+                updateExpressionDisplay(expression);
+                
+                // Draw landmarks
+                drawConnectors(canvasCtx, landmarks, FACEMESH_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYE, {color: '#FF3030'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_RIGHT_EYEBROW, {color: '#FF3030'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYE, {color: '#30FF30'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LEFT_EYEBROW, {color: '#30FF30'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_FACE_OVAL, {color: '#E0E0E0'});
+                drawConnectors(canvasCtx, landmarks, FACEMESH_LIPS, {color: '#E0E0E0'});
+                
+                document.getElementById('status-dot').classList.add('active');
+                document.getElementById('detection-status').textContent = 'Face Detected';
+            } else {
+                document.getElementById('status-dot').classList.remove('active');
+                document.getElementById('detection-status').textContent = 'No Face Detected';
+                updateExpressionDisplay({ type: 'neutral', confidence: 0 });
+            }
+            
+            canvasCtx.restore();
+        }
+
+        // Analyze facial expression from landmarks
+        function analyzeExpression(landmarks) {
+            // Key landmark indices
+            const leftEyeInner = landmarks[133];
+            const leftEyeOuter = landmarks[33];
+            const rightEyeInner = landmarks[362];
+            const rightEyeOuter = landmarks[263];
+            const leftEyeTop = landmarks[159];
+            const leftEyeBottom = landmarks[145];
+            const rightEyeTop = landmarks[386];
+            const rightEyeBottom = landmarks[374];
+            
+            const mouthLeft = landmarks[61];
+            const mouthRight = landmarks[291];
+            const mouthTop = landmarks[13];
+            const mouthBottom = landmarks[14];
+            const mouthCenter = landmarks[13];
+
+            // Calculate eye openness
+            const leftEyeOpen = Math.abs(leftEyeTop.y - leftEyeBottom.y) / Math.abs(leftEyeInner.x - leftEyeOuter.x);
+            const rightEyeOpen = Math.abs(rightEyeTop.y - rightEyeBottom.y) / Math.abs(rightEyeInner.x - rightEyeOuter.x);
+            const avgEyeOpen = (leftEyeOpen + rightEyeOpen) / 2;
+
+            // Calculate mouth openness
+            const mouthWidth = Math.abs(mouthLeft.x - mouthRight.x);
+            const mouthHeight = Math.abs(mouthTop.y - mouthBottom.y);
+            const mouthOpenRatio = mouthHeight / mouthWidth;
+
+            // Calculate smile (mouth corners up)
+            const leftCornerY = landmarks[61].y;
+            const rightCornerY = landmarks[291].y;
+            const centerLipY = landmarks[13].y;
+            const bottomLipY = landmarks[14].y;
+            const smileIndicator = (centerLipY - (leftCornerY + rightCornerY) / 2) / mouthWidth;
+
+            // Determine expression
+            let expression = 'neutral';
+            let confidence = 0;
+
+            // Check for eyes closed
+            if (avgEyeOpen < 0.2) {
+                expression = 'eyes_closed';
+                confidence = 1 - (avgEyeOpen / 0.2);
+            }
+            // Check for surprised/open mouth
+            else if (mouthOpenRatio > 0.4) {
+                expression = 'surprised';
+                confidence = Math.min(mouthOpenRatio / 0.4, 1);
+            }
+            // Check for smile
+            else if (smileIndicator > 0.05 && mouthHeight > 0.03) {
+                expression = 'smile';
+                confidence = Math.min(smileIndicator / 0.1, 1);
+            }
+            // Check for mouth open (talking/shouting)
+            else if (mouthOpenRatio > 0.2) {
+                expression = 'mouth_open';
+                confidence = mouthOpenRatio / 0.2;
+            }
+            else {
+                expression = 'neutral';
+                confidence = 0.8;
+            }
+
+            return { type: expression, confidence: Math.min(confidence, 1) };
+        }
+
+        // Update expression display and fetch matching image
+        function updateExpressionDisplay(expression) {
+            // Smooth expression changes
+            expressionHistory.push(expression.type);
+            if (expressionHistory.length > 5) expressionHistory.shift();
+            
+            const dominantExpression = getDominantExpression();
+            
+            // Update UI
+            document.getElementById('expression-value').textContent = dominantExpression.replace('_', ' ');
+            document.getElementById('confidence-value').textContent = Math.round(expression.confidence * 100) + '%';
+            document.getElementById('expression-label').textContent = dominantExpression.replace('_', ' ');
+
+            // Update image if enough time has passed
+            const now = Date.now();
+            if (now - lastImageUpdate > CONFIG.updateInterval && dominantExpression !== currentExpression) {
+                currentExpression = dominantExpression;
+                updateMatchedImage(dominantExpression);
+                lastImageUpdate = now;
+            }
+        }
+
+        // Get most frequent expression in history
+        function getDominantExpression() {
+            const counts = {};
+            expressionHistory.forEach(expr => {
+                counts[expr] = (counts[expr] || 0) + 1;
+            });
+            return Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b, 'neutral');
+        }
+
+        // Update the matched image
+        function updateMatchedImage(expression) {
+            const container = document.getElementById('image-container');
+            const images = EXPRESSION_IMAGES[expression] || EXPRESSION_IMAGES.neutral;
+            const randomImage = images[Math.floor(Math.random() * images.length)];
+            
+            // Create new image element
+            const img = new Image();
+            img.className = 'loading';
+            img.onload = function() {
+                // Remove old content
+                container.innerHTML = '';
+                img.classList.remove('loading');
+                container.appendChild(img);
+                
+                // Add expression label
+                const label = document.createElement('div');
+                label.className = 'expression-label';
+                label.textContent = expression.replace('_', ' ');
+                container.appendChild(label);
+            };
+            img.onerror = function() {
+                container.innerHTML = '<div class="placeholder-text">Failed to load image<br>Trying again...</div>';
+                setTimeout(() => updateMatchedImage(expression), 2000);
+            };
+            img.src = randomImage + '&t=' + Date.now(); // Cache busting
+        }
+
+        // Toggle camera on/off
+        async function toggleCamera() {
+            const btn = document.getElementById('start-btn');
+            
+            if (!cameraActive) {
+                try {
+                    await startCamera();
+                    btn.textContent = 'Stop Camera';
+                    btn.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+                } catch (error) {
+                    showError(error.message);
+                }
+            } else {
+                stopCamera();
+                btn.textContent = 'Start Camera';
+                btn.style.background = '';
+            }
+        }
+
+        // Start camera stream
+        async function startCamera() {
+            videoElement = document.getElementById('input_video');
+            canvasElement = document.getElementById('output_canvas');
+            canvasCtx = canvasElement.getContext('2d');
+
+            // Set canvas size to match video
+            const updateCanvasSize = () => {
+                canvasElement.width = videoElement.videoWidth || 640;
+                canvasElement.height = videoElement.videoHeight || 480;
+            };
+
+            videoElement.addEventListener('loadedmetadata', updateCanvasSize);
+            
+            // Request camera access
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }, 
+                audio: false 
+            });
+            
+            videoElement.srcObject = stream;
+            await videoElement.play();
+            
+            // Initialize Face Mesh if not already done
+            if (!faceMesh) {
+                initFaceMesh();
+            }
+            
+            // Start detection loop
+            cameraActive = true;
+            detectFrame();
+            
+            // Hide error message if visible
+            document.getElementById('error-message').classList.remove('show');
+        }
+
+        // Stop camera stream
+        function stopCamera() {
+            if (videoElement && videoElement.srcObject) {
+                const tracks = videoElement.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoElement.srcObject = null;
+            }
+            cameraActive = false;
+            document.getElementById('status-dot').classList.remove('active');
+            document.getElementById('detection-status').textContent = 'Camera Off';
+        }
+
+        // Detection loop
+        async function detectFrame() {
+            if (!cameraActive) return;
+            
+            if (faceMesh && videoElement.readyState >= 2) {
+                await faceMesh.send({ image: videoElement });
+            }
+            
+            requestAnimationFrame(detectFrame);
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            const errorText = document.getElementById('error-text');
+            errorText.textContent = message;
+            errorDiv.classList.add('show');
+            
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+            }, 5000);
+        }
+
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+
+        // Initialize on load
+        window.addEventListener('load', () => {
+            console.log('AI Pose Matcher loaded. Click "Start Camera" to begin.');
+        });
+
+        // Handle visibility change (pause when tab is hidden)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && cameraActive) {
+                // Optionally pause processing when tab is hidden
+            }
+        });
+    </script>
+</body>
+</html>
